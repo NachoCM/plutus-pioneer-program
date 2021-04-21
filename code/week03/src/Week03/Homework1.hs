@@ -44,12 +44,18 @@ PlutusTx.unstableMakeIsData ''VestingDatum
 -- or if beneficiary2 has signed the transaction and the deadline has passed.
 mkValidator :: VestingDatum -> () -> ScriptContext -> Bool
 mkValidator dat _ ctx =
-  traceIfFalse "conditions not met"
-    $  (checkBen beneficiary1)
-    || (checkBen beneficiary2)
+    ((checkBen beneficiary1) && checkDeadlineUnexpired) ||
+      ((checkBen beneficiary2) && checkDeadlineExpired)
+
   where
     checkBen :: (VestingDatum -> PubKeyHash) -> Bool
     checkBen acqBen = acqBen dat `elem` txInfoSignatories info
+
+    checkDeadlineUnexpired :: Bool
+    checkDeadlineUnexpired = to (deadline dat) `contains` txInfoValidRange info
+
+    checkDeadlineExpired :: Bool
+    checkDeadlineExpired = from (1 + deadline dat) `contains` txInfoValidRange info
 
     info :: TxInfo
     info = scriptContextTxInfo ctx
@@ -104,8 +110,11 @@ grab = do
     now    <- currentSlot
     pkh    <- pubKeyHash <$> ownPubKey
     utxos  <- utxoAt scrAddress
-    let utxos1 = Map.filter (isSuitable $ \dat -> beneficiary1 dat == pkh && now <= deadline dat) utxos
-        utxos2 = Map.filter (isSuitable $ \dat -> beneficiary2 dat == pkh && now >  deadline dat) utxos
+    -- let utxos1 = Map.filter (isSuitable $ \dat -> beneficiary1 dat == pkh && now <= deadline dat) utxos
+    --     utxos2 = Map.filter (isSuitable $ \dat -> beneficiary2 dat == pkh && now >  deadline dat) utxos
+    -- FIXME Forcing the slot checks to the validator
+    let utxos1 = Map.filter (isSuitable $ \dat -> beneficiary1 dat == pkh) utxos
+        utxos2 = Map.filter (isSuitable $ \dat -> beneficiary2 dat == pkh) utxos
     logInfo @String $ printf "found %d gift(s) to grab" (Map.size utxos1 P.+ Map.size utxos2)
     unless (Map.null utxos1) $ do
         let orefs   = fst <$> Map.toList utxos1
@@ -115,6 +124,7 @@ grab = do
             tx      = mconcat [mustSpendScriptOutput oref $ Redeemer $ PlutusTx.toData () | oref <- orefs] P.<>
                       mustValidateIn (to now)
         void $ submitTxConstraintsWith @Void lookups tx
+    logInfo @String $ printf "grab passing interval %s" (show $ from now)
     unless (Map.null utxos2) $ do
         let orefs   = fst <$> Map.toList utxos2
             lookups = Constraints.unspentOutputs utxos2 P.<>
