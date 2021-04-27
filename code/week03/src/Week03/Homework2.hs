@@ -95,7 +95,7 @@ grab = do
     pkh   <- pubKeyHash <$> ownPubKey
     -- utxos <- Map.filter (isSuitable now) <$> utxoAt (scrAddress pkh)
     -- FIXME Forcing the slot checks to the validator
-    utxos <- Map.filter (const True) <$> utxoAt (scrAddress pkh)
+    utxos <- utxoAt (scrAddress pkh)
     if Map.null utxos
         then logInfo @String $ "no gifts available"
         else do
