@@ -30,6 +30,7 @@ import           Playground.TH        (mkKnownCurrencies, mkSchemaDefinitions)
 import           Playground.Types     (KnownCurrency (..))
 import qualified Prelude              as P
 import           Text.Printf          (printf)
+import           Test.QuickCheck      (quickCheck)
 
 data VestingDatum = VestingDatum
     { beneficiary1 :: PubKeyHash
@@ -44,21 +45,43 @@ PlutusTx.unstableMakeIsData ''VestingDatum
 -- or if beneficiary2 has signed the transaction and the deadline has passed.
 mkValidator :: VestingDatum -> () -> ScriptContext -> Bool
 mkValidator dat _ ctx =
-    ((checkBen beneficiary1) && checkDeadlineUnexpired) ||
-      ((checkBen beneficiary2) && checkDeadlineExpired)
+    ((checkBen beneficiary1) && checkDeadlineUnexpired (deadline dat) (txInfoValidRange info)) ||
+      ((checkBen beneficiary2) && checkDeadlineExpired (deadline dat) (txInfoValidRange info))
 
   where
     checkBen :: (VestingDatum -> PubKeyHash) -> Bool
     checkBen acqBen = acqBen dat `elem` txInfoSignatories info
 
-    checkDeadlineUnexpired :: Bool
-    checkDeadlineUnexpired = to (deadline dat) `contains` txInfoValidRange info
-
-    checkDeadlineExpired :: Bool
-    checkDeadlineExpired = from (1 + deadline dat) `contains` txInfoValidRange info
-
     info :: TxInfo
     info = scriptContextTxInfo ctx
+
+-- True if the tx Interval is within the deadline Interval
+checkDeadlineUnexpired :: Slot -> Interval Slot -> Bool
+checkDeadlineUnexpired d range = to d `contains` range
+
+-- True if the tx Interval is not within the deadline Interval
+checkDeadlineExpired :: Slot -> Interval Slot -> Bool
+checkDeadlineExpired d range = from (1 + d) `contains` range
+
+-- Transactions before or on the deadline should pass
+prop_BeforeDeadline :: Integer -> Bool
+prop_BeforeDeadline d = checkDeadlineUnexpired (Slot d) (to $ Slot d)
+
+-- Transactions after the deadline should pass
+prop_AfterDeadline :: Integer -> Bool
+prop_AfterDeadline d = checkDeadlineExpired (Slot d) (from $ Slot (1 + d))
+
+-- Transactions after but still overlapping the deadline by 1 Slot should fail
+prop_AlmostAfterDeadline :: Integer -> Bool
+prop_AlmostAfterDeadline d = not $ checkDeadlineExpired (Slot d) (from $ Slot d)
+
+-- Transactions that straddle the deadline should fail
+prop_Straddling :: Integer -> Bool
+prop_Straddling d = not $ checkDeadlineExpired (Slot d) (interval (Slot $ d - 10) (Slot $ d + 10))
+
+tests :: IO ()
+tests = mapM_ quickCheck [prop_BeforeDeadline, prop_AfterDeadline, prop_AlmostAfterDeadline, prop_Straddling]
+
 
 data Vesting
 instance Scripts.ScriptType Vesting where
