@@ -34,7 +34,19 @@ import           Text.Printf          (printf)
 
 {-# INLINABLE mkValidator #-}
 mkValidator :: PubKeyHash -> Slot -> () -> ScriptContext -> Bool
-mkValidator _ _ _ _ = False -- FIX ME!
+mkValidator beneficiary deadline _ ctx =
+    traceIfFalse "beneficiary's signature missing" checkSig      &&
+    traceIfFalse "deadline not reached"            checkDeadline
+
+  where
+    info :: TxInfo
+    info = scriptContextTxInfo ctx
+
+    checkSig :: Bool
+    checkSig = beneficiary `elem` txInfoSignatories info
+
+    checkDeadline :: Bool
+    checkDeadline = from deadline `contains` txInfoValidRange info
 
 data Vesting
 instance Scripts.ScriptType Vesting where
@@ -42,13 +54,17 @@ instance Scripts.ScriptType Vesting where
     type instance RedeemerType Vesting = ()
 
 inst :: PubKeyHash -> Scripts.ScriptInstance Vesting
-inst = undefined -- IMPLEMENT ME!
+inst beneficiary = Scripts.validator @Vesting
+  ($$(PlutusTx.compile [|| mkValidator ||]) `PlutusTx.applyCode` PlutusTx.liftCode beneficiary)
+  $$(PlutusTx.compile [|| wrap ||])
+  where
+    wrap = Scripts.wrapValidator @Slot @()
 
 validator :: PubKeyHash -> Validator
-validator = undefined -- IMPLEMENT ME!
+validator = Scripts.validatorScript . inst
 
 scrAddress :: PubKeyHash -> Ledger.Address
-scrAddress = undefined -- IMPLEMENT ME!
+scrAddress = scriptAddress . validator
 
 data GiveParams = GiveParams
     { gpBeneficiary :: !PubKeyHash
@@ -77,7 +93,9 @@ grab :: forall w s e. (HasBlockchainActions s, AsContractError e) => Contract w 
 grab = do
     now   <- currentSlot
     pkh   <- pubKeyHash <$> ownPubKey
-    utxos <- Map.filter (isSuitable now) <$> utxoAt (scrAddress pkh)
+    -- utxos <- Map.filter (isSuitable now) <$> utxoAt (scrAddress pkh)
+    -- FIXME Forcing the slot checks to the validator
+    utxos <- Map.filter (const True) <$> utxoAt (scrAddress pkh)
     if Map.null utxos
         then logInfo @String $ "no gifts available"
         else do
