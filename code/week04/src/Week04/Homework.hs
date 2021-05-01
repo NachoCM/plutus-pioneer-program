@@ -10,7 +10,8 @@ module Week04.Homework where
 -- import Control.Monad.Freer.Extras as Extras
 import Data.Aeson                 (FromJSON, ToJSON)
 import Data.Functor               (void)
-import Data.Text                  (Text {-, unpack-} )
+import Data.Text                  (Text, unpack )
+import Data.Void                  (Void)
 import GHC.Generics               (Generic)
 import Ledger
 import Ledger.Ada                 as Ada
@@ -30,7 +31,8 @@ payContract :: Contract () PaySchema Text ()
 payContract = do
   pp <- endpoint @"pay"
   let tx = mustPayToPubKey (ppRecipient pp) $ lovelaceValueOf $ ppLovelace pp
-  void $ submitTx tx
+  Contract.handleError (\err -> Contract.logError $ "Caught error: " ++ unpack err)
+    (void $ submitTx tx)
   payContract
 
 -- A trace that invokes the pay endpoint of payContract on Wallet 1 twice, each time with Wallet 2 as
