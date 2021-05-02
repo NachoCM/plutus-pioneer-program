@@ -7,6 +7,7 @@
 
 module Week04.Homework where
 
+import Control.Monad              (forever)
 -- import Control.Monad.Freer.Extras as Extras
 import Data.Aeson                 (FromJSON, ToJSON)
 import Data.Functor               (void)
@@ -27,13 +28,20 @@ data PayParams = PayParams
 
 type PaySchema = BlockchainActions .\/ Endpoint "pay" PayParams
 
+-- payContract :: Contract () PaySchema Text ()
+-- payContract = do
+--   pp <- endpoint @"pay"
+--   let tx = mustPayToPubKey (ppRecipient pp) $ lovelaceValueOf $ ppLovelace pp
+--   Contract.handleError (\err -> Contract.logError $ "Caught error: " ++ unpack err)
+--     (void $ submitTx tx)
+--   payContract
+
 payContract :: Contract () PaySchema Text ()
-payContract = do
+payContract = forever $ do
   pp <- endpoint @"pay"
   let tx = mustPayToPubKey (ppRecipient pp) $ lovelaceValueOf $ ppLovelace pp
   Contract.handleError (\err -> Contract.logError $ "Caught error: " ++ unpack err)
     (void $ submitTx tx)
-  payContract
 
 -- A trace that invokes the pay endpoint of payContract on Wallet 1 twice, each time with Wallet 2 as
 -- recipient, but with amounts given by the two arguments. There should be a delay of one slot
@@ -49,6 +57,12 @@ payTrace x y = do
   let pp = PayParams (pubKeyHash . walletPubKey $ wRecipient)
 
   -- The test actions
+  callEndpoint @"pay" hPayor $ pp x
+  void $ Emulator.waitNSlots 1
+  callEndpoint @"pay" hPayor $ pp x
+  void $ Emulator.waitNSlots 1
+  callEndpoint @"pay" hPayor $ pp y
+  void $ Emulator.waitNSlots 1
   callEndpoint @"pay" hPayor $ pp x
   void $ Emulator.waitNSlots 1
   callEndpoint @"pay" hPayor $ pp y
