@@ -37,13 +37,23 @@ import           Wallet.Emulator.Wallet
 -- This policy should only allow minting (or burning) of tokens if the owner of the specified PubKeyHash
 -- has signed the transaction and if the specified deadline has not passed.
 mkPolicy :: PubKeyHash -> Slot -> ScriptContext -> Bool
-mkPolicy pkh deadline ctx = True -- FIX ME!
+mkPolicy pkh deadline ctx = beforeDeadline
+
+  where
+    info = scriptContextTxInfo ctx
+
+    beforeDeadline = to deadline `contains` txInfoValidRange info
 
 policy :: PubKeyHash -> Slot -> Scripts.MonetaryPolicy
-policy pkh deadline = undefined -- IMPLEMENT ME!
+policy pkh deadline = mkMonetaryPolicyScript $
+  $$(PlutusTx.compile [|| \pkh' deadline' -> Scripts.wrapMonetaryPolicy $ mkPolicy pkh' deadline' ||])
+  `PlutusTx.applyCode`
+  PlutusTx.liftCode pkh
+  `PlutusTx.applyCode`
+  PlutusTx.liftCode deadline
 
 curSymbol :: PubKeyHash -> Slot -> CurrencySymbol
-curSymbol pkh deadline = undefined -- IMPLEMENT ME!
+curSymbol pkh deadline = scriptCurrencySymbol $ policy pkh deadline
 
 data MintParams = MintParams
     { mpTokenName :: !TokenName
@@ -60,13 +70,15 @@ mint mp = do
     pkh <- pubKeyHash <$> Contract.ownPubKey
     now <- Contract.currentSlot
     let deadline = mpDeadline mp
-    if now > deadline
+    -- if now > deadline
+    if False  -- Rigging this to always send to the policy validator
         then Contract.logError @String "deadline passed"
         else do
             let val     = Value.singleton (curSymbol pkh deadline) (mpTokenName mp) (mpAmount mp)
                 lookups = Constraints.monetaryPolicy $ policy pkh deadline
                 tx      = Constraints.mustForgeValue val <> Constraints.mustValidateIn (to deadline)
             ledgerTx <- submitTxConstraintsWith @Void lookups tx
+            -- This await causes problems with blocking if the first transaction fails
             void $ awaitTxConfirmed $ txId ledgerTx
             Contract.logInfo @String $ printf "forged %s" (show val)
 
@@ -87,7 +99,13 @@ test = runEmulatorTraceIO $ do
     callEndpoint @"mint" h $ MintParams
         { mpTokenName = tn
         , mpDeadline  = deadline
-        , mpAmount    = 555
+        , mpAmount    = 333
+        }
+    void $ Emulator.waitNSlots 1
+    callEndpoint @"mint" h $ MintParams
+        { mpTokenName = tn
+        , mpDeadline  = deadline
+        , mpAmount    = 444
         }
     void $ Emulator.waitNSlots 15
     callEndpoint @"mint" h $ MintParams
