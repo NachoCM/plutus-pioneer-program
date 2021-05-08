@@ -37,7 +37,11 @@ import           Wallet.Emulator.Wallet
 -- This policy should only allow minting (or burning) of tokens if the owner of the specified PubKeyHash
 -- has signed the transaction and if the specified deadline has not passed.
 mkPolicy :: PubKeyHash -> Slot -> ScriptContext -> Bool
-mkPolicy pkh deadline ctx = txSignedBy info pkh && beforeDeadline
+-- mkPolicy pkh deadline ctx = txSignedBy info pkh && beforeDeadline
+mkPolicy pkh deadline ctx = traceIfFalse "policy script failed"
+  (  traceIfFalse "incorrect signature" (txSignedBy info pkh)
+  && traceIfFalse "deadline expired" beforeDeadline
+  )
 
   where
     info = scriptContextTxInfo ctx
