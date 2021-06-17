@@ -11,10 +11,16 @@ import           Test.Tasty
 main :: IO ()
 main = defaultMain tests
 
+-- tests :: TestTree
+-- tests = testGroup "token sale"
+--     [ Spec.Trace.tests
+--     , Spec.TraceWithClose.tests
+--     , Spec.Model.tests
+--     , Spec.ModelWithClose.tests
+--     ]
+
 tests :: TestTree
 tests = testGroup "token sale"
-    [ Spec.Trace.tests
-    , Spec.TraceWithClose.tests
-    , Spec.Model.tests
-    , Spec.ModelWithClose.tests
+    -- [ Spec.ModelWithClose.tests
+    [ Spec.Model.tests
     ]
