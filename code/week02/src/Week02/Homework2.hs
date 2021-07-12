@@ -33,37 +33,43 @@ import           Playground.Types     (KnownCurrency (..))
 import           Prelude              (IO, Semigroup (..), String, undefined)
 import           Text.Printf          (printf)
 
-data MyRedeemer = MyRedeemer
+data MyTwoBoolRedeemer = MyTwoBoolRedeemer
     { flag1 :: Bool
     , flag2 :: Bool
     } deriving (Generic, FromJSON, ToJSON, ToSchema)
 
-PlutusTx.unstableMakeIsData ''MyRedeemer
+PlutusTx.unstableMakeIsData ''MyTwoBoolRedeemer
 
 {-# INLINABLE mkValidator #-}
 -- This should validate if and only if the two Booleans in the redeemer are equal!
-mkValidator :: () -> MyRedeemer -> ScriptContext -> Bool
-mkValidator _ _ _ = True -- FIX ME!
+mkValidator :: () -> MyTwoBoolRedeemer -> ScriptContext -> Bool
+mkValidator _ (MyTwoBoolRedeemer b1 b2) _ = traceIfFalse "bools do not match" $ b1  == b2
 
 data Typed
 instance Scripts.ValidatorTypes Typed where
-    -- Implement me!
+    type instance DatumType Typed = ()
+    type instance RedeemerType Typed = MyTwoBoolRedeemer
 
 typedValidator :: Scripts.TypedValidator Typed
-typedValidator = undefined -- FIX ME!
+typedValidator = Scripts.mkTypedValidator @Typed
+    $$(PlutusTx.compile [|| mkValidator ||])
+    $$(PlutusTx.compile [|| wrap ||])
+  where
+    wrap = Scripts.wrapValidator @() @MyTwoBoolRedeemer
 
 validator :: Validator
-validator = undefined -- FIX ME!
+validator = Scripts.validatorScript typedValidator
 
 valHash :: Ledger.ValidatorHash
-valHash = undefined -- FIX ME!
+valHash = Scripts.validatorHash typedValidator
 
 scrAddress :: Ledger.Address
-scrAddress = undefined -- FIX ME!
+scrAddress = scriptAddress validator
+
 
 type GiftSchema =
             Endpoint "give" Integer
-        .\/ Endpoint "grab" MyRedeemer
+        .\/ Endpoint "grab" MyTwoBoolRedeemer
 
 give :: AsContractError e => Integer -> Contract w s e ()
 give amount = do
@@ -72,7 +78,7 @@ give amount = do
     void $ awaitTxConfirmed $ txId ledgerTx
     logInfo @String $ printf "made a gift of %d lovelace" amount
 
-grab :: forall w s e. AsContractError e => MyRedeemer -> Contract w s e ()
+grab :: forall w s e. AsContractError e => MyTwoBoolRedeemer -> Contract w s e ()
 grab r = do
     utxos <- utxoAt scrAddress
     let orefs   = fst <$> Map.toList utxos
