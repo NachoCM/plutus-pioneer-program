@@ -84,10 +84,10 @@ give :: AsContractError e => GiveParams -> Contract w s e ()
 give gp = do
     let p  = gpBeneficiary gp
         d  = gpDeadline gp
-        tx = mustPayToTheScript d $ Ada.lovelaceValueOf $ gpAmount gp
+        tx = mustPayToTheScript d $ Ada.lovelaceValueOf $ gpAmount gp * 1000000
     ledgerTx <- submitTxConstraints (typedValidator p) tx
     void $ awaitTxConfirmed $ txId ledgerTx
-    logInfo @String $ printf "made a gift of %d lovelace to %s with deadline %s"
+    logInfo @String $ printf "made a gift of %d adas to %s with deadline %s"
         (gpAmount gp)
         (show $ gpBeneficiary gp)
         (show $ gpDeadline gp)
